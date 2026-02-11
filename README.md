@@ -1,68 +1,94 @@
-# Justin Posey Treasure Hunt Tool
+# Treasure Hunt Assistant (Provenance-First)
 
-This repository includes a CLI tool that can continuously gather clues and generate guesses for Justin Posey's treasure hunt.
+This tool is a **safe, provenance-driven hunt assistant** for organizing evidence and checking consistency.
+It is **not** a “final treasure location” generator.
 
-## What it does
+## Safety + legal reminders
 
-- Creates a workspace with:
-  - `clues.json` for clue content
-  - `attempts.jsonl` for all generated guesses
-  - `solution.json` when a guess is accepted
-  - `ingest_log.jsonl` for treasure.quest import history
-- Lets you add clues manually from the command line.
-- Imports clue-like text directly from `treasure.quest` (including sitemap discovery via `robots.txt`).
-- Runs repeated guess-generation rounds (`--rounds 0` means infinite/tireless mode).
-- Optionally validates each guess through an external checker command.
+- Do not trespass.
+- Obey closures, posted restrictions, and private property boundaries.
+- Avoid dangerous conditions (weather, snow, unstable terrain, water hazards).
+- Follow local laws and land-management rules.
 
-## Quick start
+## Core model: clues vs leads
 
-```bash
-python3 treasure_tool.py --workspace ./justin_hunt init
-python3 treasure_tool.py --workspace ./justin_hunt ingest-treasure-quest --url https://treasure.quest/ --max-pages 30
-python3 treasure_tool.py --workspace ./justin_hunt run --rounds 5 --per-clue 20
-python3 treasure_tool.py --workspace ./justin_hunt status
-```
+- **Clues** (`clues.json`): promoted/accepted evidence with provenance metadata.
+- **Leads** (`leads.json`): unverified web snippets (default output of `ingest-internet`).
+- Promote only vetted leads using `promote-lead`.
 
-## Import all information from treasure.quest
+Each clue includes:
+- `fingerprint` (sha256 prefix of normalized text)
+- `source` object: `{kind, ref, imported_at}`
 
-Use the built-in importer to pull from `treasure.quest` pages (same-domain only):
+Duplicates are deduped by fingerprint.
 
-```bash
-python3 treasure_tool.py --workspace ./justin_hunt ingest-treasure-quest \
-  --url https://treasure.quest/ \
-  --max-pages 100 \
-  --timeout 15
-```
+## Optional dependency (PDF quality)
 
-How it works:
-- Starts from the provided `treasure.quest` URL.
-- Reads `robots.txt` and follows `Sitemap:` entries when available.
-- Pulls text from each discovered page (up to `--max-pages`).
-- Extracts candidate clue lines, derives hints/keywords, and appends new clues.
-
-## Tireless mode
-
-Run forever with small sleeps between rounds:
+The tool works with stdlib only, but for better PDF extraction install optional `pypdf`:
 
 ```bash
-python3 treasure_tool.py --workspace ./justin_hunt run --rounds 0 --sleep 1.5
+pip install pypdf
 ```
 
-## Checker integration
+If unavailable, the tool falls back to heuristic extraction.
 
-You can wire in your own validator script/service by providing a command template:
+## Workspace files
+
+- `clues.json`
+- `leads.json`
+- `poem.json`
+- `solves.json`
+- `constraints.json`
+- `attempts.jsonl`
+- `solution.json`
+- `ingest_log.jsonl`
+
+## Local-only workflow (recommended)
 
 ```bash
-python3 treasure_tool.py --workspace ./justin_hunt run \
-  --rounds 0 \
-  --checker "python3 my_checker.py {guess}"
+python3 treasure_tool.py --workspace ./hunt init
+python3 treasure_tool.py --workspace ./hunt add-clue --text "Bridge near canyon bend" --hints "bridge" --keywords "canyon,bend"
+python3 treasure_tool.py --workspace ./hunt ingest-poem --file ./poem.txt
+python3 treasure_tool.py --workspace ./hunt add-constraint --type safety --text "Avoid avalanche terrain"
+python3 treasure_tool.py --workspace ./hunt new-solve --name "Solve A" --start "Main trailhead"
+python3 treasure_tool.py --workspace ./hunt map-line --solve-id solve-1 --line 1 --maps-to "Trailhead marker" --support moderate --evidence clue-1
+python3 treasure_tool.py --workspace ./hunt score-solve --solve-id solve-1
+python3 treasure_tool.py --workspace ./hunt export-solve --solve-id solve-1 --format md
 ```
 
-A guess is treated as accepted when:
-- the checker exits with status `0`, or
-- checker output includes `found` or `correct`.
+## Optional network workflow (fail-closed)
 
-## Notes
+### treasure.quest ingestion (allowlisted internally)
 
-- The importer is intentionally restricted to `treasure.quest` / `www.treasure.quest` domains.
-- Generated guesses are heuristic-based and meant to bootstrap search, not replace domain-specific puzzle logic.
+```bash
+python3 treasure_tool.py --workspace ./hunt ingest-treasure-quest --url https://treasure.quest/ --max-pages 30
+```
+
+### Internet ingestion into leads (allowlist REQUIRED)
+
+```bash
+python3 treasure_tool.py --workspace ./hunt ingest-internet \
+  --query "Justin Posey treasure hunt" \
+  --allow-domains "treasure.quest,youtube.com" \
+  --max-results 12
+```
+
+Without `--allow-domains`, internet ingestion refuses to run.
+Blocked URLs are logged as `"blocked by allowlist"`.
+
+Promote vetted leads:
+
+```bash
+python3 treasure_tool.py --workspace ./hunt promote-lead --lead-id lead-3
+```
+
+## Experimental guess mode
+
+`run` and `run-forever` are **EXPERIMENTAL** heuristic helpers.
+They should not be treated as authoritative conclusions.
+
+Checker command uses tokenized execution (no shell) and literal `{guess}` replacement:
+
+```bash
+python3 treasure_tool.py --workspace ./hunt run --checker "python3 checker.py {guess}"
+```
